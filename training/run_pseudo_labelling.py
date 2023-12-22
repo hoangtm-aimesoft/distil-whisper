@@ -57,7 +57,6 @@ from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
-
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.34.0.dev0")
 
@@ -107,7 +106,7 @@ class ModelArguments:
         default="",
         metadata={
             "help": "In case the relevant files are located inside a subfolder of the model repo on huggingface.co, you can"
-            "specify the folder name here."
+                    "specify the folder name here."
         },
     )
     token: str = field(
@@ -238,7 +237,7 @@ class DataTrainingArguments:
         default="transcribe",
         metadata={
             "help": "Task, either `transcribe` for speech recognition or `translate` for speech translation."
-            "This argument should be set for multilingual distillation only. For English speech recognition, it should be left as `None`."
+                    "This argument should be set for multilingual distillation only. For English speech recognition, it should be left as `None`."
         },
     )
     decode_token_ids: bool = field(
@@ -339,10 +338,10 @@ class DataCollatorSpeechSeq2SeqWithPadding:
 
 
 def log_metric(
-    accelerator,
-    metrics: Dict,
-    train_time: float,
-    prefix: str = "eval",
+        accelerator,
+        metrics: Dict,
+        train_time: float,
+        prefix: str = "eval",
 ):
     """Helper function to log all evaluation metrics with the correct prefixes and styling."""
     log_metrics = {}
@@ -353,13 +352,13 @@ def log_metric(
 
 
 def log_pred(
-    accelerator,
-    pred_str: List[str],
-    label_str: List[str],
-    norm_pred_str: List[str],
-    norm_label_str: List[str],
-    prefix: str = "eval",
-    num_lines: int = 200000,
+        accelerator,
+        pred_str: List[str],
+        label_str: List[str],
+        norm_pred_str: List[str],
+        norm_label_str: List[str],
+        prefix: str = "eval",
+        num_lines: int = 200000,
 ):
     """Helper function to log target/predicted transcriptions to weights and biases (wandb)."""
     if accelerator.is_main_process:
@@ -574,7 +573,8 @@ def main():
     model_input_name = feature_extractor.model_input_names[0]
     id_column_name = data_args.id_column_name
     normalizer = (
-        BasicTextNormalizer() if data_args.language is not None else EnglishTextNormalizer(tokenizer.english_spelling_normalizer)
+        BasicTextNormalizer() if data_args.language is not None else EnglishTextNormalizer(
+            tokenizer.english_spelling_normalizer)
     )
 
     if data_args.max_samples_per_split is not None:

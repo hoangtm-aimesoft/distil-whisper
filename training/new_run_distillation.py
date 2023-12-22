@@ -44,6 +44,7 @@ from datasets import (
     concatenate_datasets,
     interleave_datasets,
     load_dataset,
+    Dataset
 )
 from huggingface_hub import Repository, create_repo
 from torch.utils.data import DataLoader
@@ -551,11 +552,8 @@ def convert_dataset_str_to_list(
     return dataset_names_dict
 
 
-def load_multiple_datasets(
-        dataset_names: Union[List, str],
-        dataset_config_names: Union[List, str],
-        splits: Optional[Union[List, str]] = None,
-        text_column_names: Optional[List] = None,
+def load_local_dataset(
+        datadir: str,
         sampling_rate: Optional[int] = 16000,
         stopping_strategy: Optional[str] = "first_exhausted",
         dataset_samples: Optional[Union[List, np.array]] = None,
@@ -564,74 +562,28 @@ def load_multiple_datasets(
         accelerator: Optional[Accelerator] = None,
         use_pseudo_labels: float = None,
         **kwargs,
-) -> IterableDataset:
-    dataset_names_dict = convert_dataset_str_to_list(
-        dataset_names, dataset_config_names, splits, text_column_names, dataset_samples
-    )
-
-    if dataset_samples is not None:
-        dataset_samples = [ds_dict["samples"] for ds_dict in dataset_names_dict]
-        probabilities = np.array(dataset_samples) / np.sum(dataset_samples)
-    else:
-        probabilities = None
-
-    all_datasets = []
+) -> Dataset:
     # iterate over the datasets we want to interleave
-    for dataset_dict in tqdm(
-            dataset_names_dict,
-            desc="Combining datasets...",
-            disable=not accelerator.is_local_main_process if accelerator is not None else False,
-    ):
-        dataset = load_dataset(
-            dataset_dict["name"],
-            dataset_dict["config"],
-            split=dataset_dict["split"],
-            streaming=streaming,
-            **kwargs,
-        )
-        # resample to specified sampling rate
-        dataset = dataset.cast_column("audio", datasets.features.Audio(sampling_rate))
-        dataset_features = dataset.features.keys()
-        columns_to_keep = {"audio", "text"}
+    arrow_files = [os.path.join(datadir, arrow_file) for arrow_file in os.listdir(datadir) if
+                   arrow_file.endswith('.arrow')]
+    dataset = concatenate_datasets([Dataset.from_file(arrow_file) for arrow_file in arrow_files])
+    # resample to specified sampling rate
+    dataset = dataset.cast_column("audio", datasets.features.Audio(sampling_rate))
+    dataset_features = dataset.features.keys()
+    columns_to_keep = {"audio", "sentence"}
 
-        if dataset_dict["text_column_name"] not in dataset_features:
+    if use_pseudo_labels:
+        if "whisper_transcript" not in dataset_features:
             raise ValueError(
-                f"Text column name {dataset_dict['text_column_name']} not found in dataset"
-                f" '{dataset_dict['name']}'. Make sure to set `--text_column_name` to the"
-                f" correct text column - one of {', '.join(dataset_features)}."
+                f"Pseudo-label column `whisper_transcript` not found in dataset. Ensure"
+                "pseudo-labels are present in the dataset under this column name, or train directly on the text "
+                "labels by setting `--use_pseudo_labels=False` and defining the appropriate `--text_column_name`."
             )
+        columns_to_keep.add("whisper_transcript")
+    dataset_features = dataset.features.keys()
+    dataset = dataset.remove_columns(set(dataset_features - columns_to_keep))
 
-        # blanket renaming of all transcription columns to text
-        if dataset_dict["text_column_name"] != "text":
-            dataset = dataset.rename_column(dataset_dict["text_column_name"], "text")
-
-        if use_pseudo_labels:
-            if "whisper_transcript" not in dataset_features:
-                raise ValueError(
-                    f"Pseudo-label column `whisper_transcript` not found in dataset {dataset_dict['name']}. Ensure"
-                    "pseudo-labels are present in the dataset under this column name, or train directly on the text "
-                    "labels by setting `--use_pseudo_labels=False` and defining the appropriate `--text_column_name`."
-                )
-            columns_to_keep.add("whisper_transcript")
-        dataset_features = dataset.features.keys()
-        dataset = dataset.remove_columns(set(dataset_features - columns_to_keep))
-        all_datasets.append(dataset)
-
-    if len(all_datasets) == 1:
-        # we have a single dataset so just return it as is
-        return all_datasets[0]
-
-    # if streaming:
-    #     interleaved_dataset = interleave_datasets(
-    #         all_datasets,
-    #         stopping_strategy=stopping_strategy,
-    #         probabilities=probabilities,
-    #         seed=seed,
-    #     )
-    # else:
-    interleaved_dataset = concatenate_datasets(all_datasets)
-
-    return interleaved_dataset
+    return dataset
 
 
 def get_layers_to_supervise(student_layers: int, teacher_layers: int) -> Dict:
@@ -820,7 +772,7 @@ def main():
     set_seed(training_args.seed)
 
     if training_args.do_train:
-        raw_datasets["train"] = load_multiple_datasets(
+        raw_datasets["train"] = load_local_dataset(
             data_args.train_dataset_name,
             data_args.train_dataset_config_name,
             splits=data_args.train_split_name,

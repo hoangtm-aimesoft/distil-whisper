@@ -7,3 +7,5 @@ evaluate>=0.4.1
 wandb
 tensorboard
 nltk
+matplotlib
+optimum

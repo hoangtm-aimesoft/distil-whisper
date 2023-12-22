@@ -26,7 +26,6 @@ import numpy as np
 import torch
 from transformers import GenerationConfig, WhisperForConditionalGeneration, WhisperProcessor
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -45,7 +44,7 @@ def parse_args():
         type=str,
         default="",
         help="In case the relevant teacher weights are located inside a subfolder of the model repo on huggingface.co, you "
-        "can specify the folder name here.",
+             "can specify the folder name here.",
     )
     parser.add_argument(
         "--encoder_layers",
@@ -84,14 +83,15 @@ def parse_args():
 
 
 def init_student_model_from_teacher(
-    teacher_checkpoint,
-    encoder_layers=None,
-    decoder_layers=2,
-    save_dir=None,
-    push_to_hub=None,
-    cache_dir=None,
-    subfolder="",
+        teacher_checkpoint,
+        encoder_layers=None,
+        decoder_layers=2,
+        save_dir=None,
+        push_to_hub=None,
+        cache_dir=None,
+        subfolder="",
 ):
+    # Get the teacher model from teacher model checkpoint
     teacher_model = WhisperForConditionalGeneration.from_pretrained(
         teacher_checkpoint,
         cache_dir=cache_dir,
@@ -99,12 +99,15 @@ def init_student_model_from_teacher(
         low_cpu_mem_usage=True,
     )
     processor = WhisperProcessor.from_pretrained(teacher_checkpoint)
+
     generation_config = GenerationConfig.from_pretrained(teacher_checkpoint)
 
+    # Get the teacher model config
     teacher_config = teacher_model.config
     teacher_encoder_layers = teacher_config.encoder_layers
     teacher_decoder_layers = teacher_config.decoder_layers
 
+    # Copy the teacher config to the student config and update using specified num_layers
     student_config = copy.deepcopy(teacher_config)
     student_config.update(
         {
@@ -112,7 +115,7 @@ def init_student_model_from_teacher(
             "decoder_layers": decoder_layers,
         }
     )
-
+    # Mapping encoder layers from teacher to student model
     encoder_mapping = np.linspace(0, teacher_encoder_layers - 1, student_config.encoder_layers, dtype=int)
     encoder_mapping[-1] = teacher_encoder_layers - 1
 
@@ -120,6 +123,7 @@ def init_student_model_from_teacher(
     for student_layer, teacher_layer in enumerate(encoder_mapping):
         encoder_map[teacher_layer] = student_layer
 
+    # Mapping decoder layers form teacher to student model
     decoder_mapping = np.linspace(0, teacher_decoder_layers - 1, student_config.decoder_layers, dtype=int)
     decoder_mapping[-1] = teacher_decoder_layers - 1
 
@@ -188,7 +192,7 @@ def init_student_model_from_teacher(
     decoder_start_token_id = student_model.config.decoder_start_token_id
     decoder_input_ids = torch.ones((input_features.shape[0], 1), dtype=torch.long) * decoder_start_token_id
 
-    # do a forward pass - outputs will be gibberish for the initialised model so we can't check them
+    # do a forward pass - outputs will be gibberish for the initialised model, so we can't check them
     # but we make can sure the model runs as expected
     logger.info("Checking we can run the converted model forward...")
     _ = student_model(input_features, decoder_input_ids=decoder_input_ids).logits
